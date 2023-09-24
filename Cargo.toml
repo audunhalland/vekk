@@ -1,7 +1,13 @@
 [package]
 name = "vekk"
 version = "0.1.0"
+authors = ["Audun Halland <audun.halland@pm.me>"]
 edition = "2021"
+license = "MIT"
+description = "A disappearingly small small vector optimization"
+repository = "https://github.com/audunhalland/vekk/"
+keywords = ["small", "vec", "vector"]
+categories = ["data-structures"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
