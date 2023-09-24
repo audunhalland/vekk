@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use thin_vec::ThinVec;
 
 use crate::{Array, Repr, Vekk};
@@ -72,5 +74,17 @@ where
             }
             Repr::Heap(vec) => Iter(IterRepr::Heap(vec.into_iter())),
         }
+    }
+}
+
+impl<'a, A: Array> IntoIterator for &'a Vekk<A>
+where
+    A::Item: Default,
+{
+    type Item = &'a A::Item;
+    type IntoIter = <&'a [A::Item] as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.deref().into_iter()
     }
 }

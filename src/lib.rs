@@ -60,24 +60,15 @@ impl<A: Array> Vekk<A> {
     where
         A::Item: Default,
     {
-        match &mut self.repr {
-            Repr::Inline { len, array } => {
-                if *len as usize == A::CAPACITY {
-                    let mut vec = ThinVec::with_capacity(A::CAPACITY + 1);
-                    for item in array.as_slice_mut() {
-                        let item = core::mem::take(item);
-                        vec.push(item);
-                    }
-                    vec.push(item);
-                    self.repr = Repr::Heap(vec);
-                } else {
-                    array.as_slice_mut()[*len as usize] = item;
-                    *len += 1;
-                }
-            }
-            Repr::Heap(vec) => {
-                vec.push(item);
-            }
+        self.push_inner(item);
+    }
+
+    pub fn extend(&mut self, iter: impl IntoIterator<Item = A::Item>)
+    where
+        A::Item: Default,
+    {
+        for item in iter {
+            self.push_inner(item);
         }
     }
 
@@ -98,6 +89,70 @@ impl<A: Array> Vekk<A> {
             Repr::Heap(vec) => {
                 // Currently does not switch back to inline representation
                 vec.pop()
+            }
+        }
+    }
+
+    pub fn insert(&mut self, index: usize, element: A::Item)
+    where
+        A::Item: Default,
+    {
+        match &mut self.repr {
+            Repr::Inline { len, array } => {
+                if (*len as usize) == Self::inline_capacity() {
+                    let mut vec = Self::thinvec_from_array(array, Self::inline_capacity() + 1);
+                    vec.insert(index, element);
+                    self.repr = Repr::Heap(vec);
+                } else {
+                    let slice = array.as_slice_mut();
+                    for idx in index..(*len as usize) {
+                        slice.swap(idx, idx + 1);
+                    }
+                    slice[index] = element;
+                    *len += 1;
+                }
+            }
+            Repr::Heap(vec) => {
+                vec.insert(index, element);
+            }
+        }
+    }
+
+    fn inline_capacity() -> usize {
+        core::cmp::min(A::CAPACITY, u16::MAX as usize)
+    }
+
+    #[inline]
+    fn thinvec_from_array(array: &mut A, capacity: usize) -> ThinVec<A::Item>
+    where
+        A::Item: Default,
+    {
+        let mut vec = ThinVec::with_capacity(capacity);
+        for item in array.as_slice_mut() {
+            let item = core::mem::take(item);
+            vec.push(item);
+        }
+        vec
+    }
+
+    #[inline]
+    pub fn push_inner(&mut self, item: A::Item)
+    where
+        A::Item: Default,
+    {
+        match &mut self.repr {
+            Repr::Inline { len, array } => {
+                if *len as usize == Self::inline_capacity() {
+                    let mut vec = Self::thinvec_from_array(array, Self::inline_capacity() + 1);
+                    vec.push(item);
+                    self.repr = Repr::Heap(vec);
+                } else {
+                    array.as_slice_mut()[*len as usize] = item;
+                    *len += 1;
+                }
+            }
+            Repr::Heap(vec) => {
+                vec.push(item);
             }
         }
     }
@@ -131,6 +186,54 @@ impl<A: Array> Default for Vekk<A> {
                 array: A::default(),
             },
         }
+    }
+}
+
+impl<A: Array> Clone for Vekk<A>
+where
+    A: Clone,
+    A::Item: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            repr: self.repr.clone(),
+        }
+    }
+}
+
+impl<A: Array> Clone for Repr<A>
+where
+    A: Clone,
+    A::Item: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            Self::Inline { len, array } => Self::Inline {
+                len: *len,
+                array: array.clone(),
+            },
+            Self::Heap(vec) => Self::Heap(vec.clone()),
+        }
+    }
+}
+
+impl<A: Array> From<A> for Vekk<A> {
+    fn from(value: A) -> Self {
+        Self {
+            repr: Repr::Inline {
+                len: A::CAPACITY as u16,
+                array: value,
+            },
+        }
+    }
+}
+
+impl<A: Array> From<Vec<A::Item>> for Vekk<A>
+where
+    A::Item: Default,
+{
+    fn from(value: Vec<A::Item>) -> Self {
+        value.into_iter().collect()
     }
 }
 
@@ -183,6 +286,7 @@ where
 mod tests {
     use super::*;
     use core::mem::size_of;
+    use std::num::NonZeroUsize;
 
     #[test]
     fn size() {
@@ -256,5 +360,72 @@ mod tests {
         assert_eq!(v.pop(), Some(2));
         assert!(matches!(v.repr, Repr::Heap(_)));
         assert_eq!(v.as_slice(), &[1]);
+    }
+
+    #[test]
+    fn insert1() {
+        let mut v: Vekk<[char; 4]> = Default::default();
+        v.insert(0, 'a');
+        assert_eq!(v.as_slice(), &['a']);
+    }
+
+    #[test]
+    fn insert2() {
+        let mut v: Vekk<[char; 4]> = vec!['a', 'c'].into();
+        v.insert(1, 'b');
+        assert_eq!(v.as_slice(), &['a', 'b', 'c']);
+    }
+
+    #[test]
+    fn insert3() {
+        let mut v: Vekk<[char; 4]> = vec!['a', 'b'].into();
+        v.insert(2, 'c');
+        assert_eq!(v.as_slice(), &['a', 'b', 'c']);
+    }
+
+    #[test]
+    fn insert4() {
+        let mut v: Vekk<[char; 4]> = vec!['a', 'b', 'd', 'e'].into();
+        assert!(matches!(v.repr, Repr::Inline { .. }));
+        v.insert(2, 'c');
+        assert_eq!(v.as_slice(), &['a', 'b', 'c', 'd', 'e']);
+    }
+
+    #[test]
+    fn insert_extend() {
+        let mut v: Vekk<[char; 4]> = Default::default();
+
+        v.insert(0, 'b');
+        assert_eq!(v.as_slice(), &['b']);
+
+        v.extend(['d']);
+        assert_eq!(v.as_slice(), &['b', 'd']);
+
+        v.insert(1, 'c');
+        assert_eq!(v.as_slice(), &['b', 'c', 'd']);
+        assert!(matches!(v.repr, Repr::Inline { .. }));
+
+        v.insert(3, 'e');
+        assert_eq!(v.as_slice(), &['b', 'c', 'd', 'e']);
+        assert!(matches!(v.repr, Repr::Inline { .. }));
+
+        v.insert(0, 'a');
+        assert_eq!(v.as_slice(), &['a', 'b', 'c', 'd', 'e']);
+        assert!(matches!(v.repr, Repr::Heap(_)));
+    }
+
+    #[allow(unused)]
+    enum Test<T> {
+        A(u16, T),
+        B(NonZeroUsize),
+    }
+
+    #[test]
+    fn test_size() {
+        assert_eq!(16, size_of::<Test<u64>>());
+        assert_eq!(16, size_of::<Test<u32>>());
+        assert_eq!(16, size_of::<Test<u16>>());
+        assert_eq!(16, size_of::<Test<u8>>());
+        assert_eq!(16, size_of::<Test<()>>());
     }
 }
