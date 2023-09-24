@@ -1,5 +1,7 @@
 # vekk
-A disappearingly small small vector optimization.
+But at least read the README first!
+
+`vekk` is a disappearingly small small vector optimization.
 
 This project is an attempt to optimize Rust enum layout to make a small vector optimization.
 
