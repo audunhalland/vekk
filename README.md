@@ -1,5 +1,5 @@
 # vekk
-A disappearingly small small vector optimization
+A disappearingly small small vector optimization.
 
 This project is an attempt to optimize Rust enum layout to make a small vector optimization.
 
@@ -26,9 +26,11 @@ enum E1 {
 ```
 
 `E1` can be represented with two words.
-It's not possible to take the address of the `E1::A(u16, u64)` variant tuple, so it doesn't struct layout constraints don't apply.
+It's not possible to take the address of the `E1::A(u16, u64)` variant tuple, so struct layout constraints don't apply to it.
 This means it can made smaller than two words, leaving space for the enum discriminant.
 
-This is taken advantage of to create a small vector optimization, inspired by [TinyVec](https://docs.rs/tinyvec/latest/tinyvec/enum.TinyVec.html).
+This is taken advantage of to create a Small Vector Optimization, inspired by [TinyVec](https://docs.rs/tinyvec/latest/tinyvec/enum.TinyVec.html).
 But TinyVec abstracts its two representations into two different structs (presumably for code reuse).
 `Vekk` encodes its inline variant using this enum trick, thereby potentially saving some space.
+
+`Vekk`'s heap representation uses [thin-vec](https://docs.rs/thin-vec/latest/thin_vec/).
