@@ -4,18 +4,21 @@ use thin_vec::ThinVec;
 
 pub mod iter;
 
-pub trait Array {
-    type Item: Default;
+pub trait Array: IntoIterator {
     const CAPACITY: usize;
 
+    fn default() -> Self;
     fn as_slice(&self) -> &[Self::Item];
     fn as_slice_mut(&mut self) -> &mut [Self::Item];
-    fn default() -> Self;
 }
 
 impl<T: Default, const N: usize> Array for [T; N] {
-    type Item = T;
     const CAPACITY: usize = N;
+
+    #[inline]
+    fn default() -> Self {
+        [(); N].map(|_| T::default())
+    }
 
     #[inline]
     fn as_slice(&self) -> &[Self::Item] {
@@ -25,11 +28,6 @@ impl<T: Default, const N: usize> Array for [T; N] {
     #[inline]
     fn as_slice_mut(&mut self) -> &mut [Self::Item] {
         self
-    }
-
-    #[inline]
-    fn default() -> Self {
-        [(); N].map(|_| T::default())
     }
 }
 
@@ -58,7 +56,10 @@ impl<A: Array> Vekk<A> {
         self.deref_mut()
     }
 
-    pub fn push(&mut self, item: A::Item) {
+    pub fn push(&mut self, item: A::Item)
+    where
+        A::Item: Default,
+    {
         match &mut self.repr {
             Repr::Inline { len, array } => {
                 if *len as usize == A::CAPACITY {
@@ -80,7 +81,10 @@ impl<A: Array> Vekk<A> {
         }
     }
 
-    pub fn pop(&mut self) -> Option<A::Item> {
+    pub fn pop(&mut self) -> Option<A::Item>
+    where
+        A::Item: Default,
+    {
         match &mut self.repr {
             Repr::Inline { len, array } => {
                 if *len > 0 {
@@ -130,27 +134,29 @@ impl<A: Array> Default for Vekk<A> {
     }
 }
 
-impl<A: Array> FromIterator<A::Item> for Vekk<A> {
+impl<A: Array> FromIterator<A::Item> for Vekk<A>
+where
+    A::Item: Default,
+{
     fn from_iter<T: IntoIterator<Item = A::Item>>(iter: T) -> Self {
         let mut iter = iter.into_iter();
         match iter.size_hint() {
-            (_, Some(upper)) if upper > A::CAPACITY => {
-                let vec = ThinVec::from_iter(iter);
-                Self {
-                    repr: Repr::Heap(vec),
-                }
-            }
-            (_, upper) => {
+            (_, Some(upper)) if upper > A::CAPACITY => Self {
+                repr: Repr::Heap(ThinVec::from_iter(iter)),
+            },
+            _ => {
                 let mut array = A::default();
                 let slice = array.as_slice_mut();
                 let mut len = 0;
 
+                let inline_capacity = core::cmp::min(A::CAPACITY, u16::MAX as usize);
+
                 while let Some(item) = iter.next() {
-                    if len >= A::CAPACITY || len >= u16::MAX as usize {
-                        let mut vec = ThinVec::with_capacity(upper.unwrap_or(A::CAPACITY));
-                        for item in slice {
-                            vec.push(core::mem::take(item));
-                        }
+                    if len >= inline_capacity {
+                        let heap_capacity = inline_capacity + iter.size_hint().1.unwrap_or(0);
+                        let mut vec = ThinVec::with_capacity(heap_capacity);
+
+                        vec.extend(array.into_iter());
                         vec.extend(iter);
 
                         return Self {

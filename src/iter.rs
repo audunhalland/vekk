@@ -9,7 +9,10 @@ enum IterRepr<A: Array> {
     Heap(<ThinVec<A::Item> as IntoIterator>::IntoIter),
 }
 
-impl<A: Array> Iterator for Iter<A> {
+impl<A: Array> Iterator for Iter<A>
+where
+    A::Item: Default,
+{
     type Item = A::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -33,7 +36,10 @@ struct InlineIter<A: Array> {
     array: A,
 }
 
-impl<A: Array> Iterator for InlineIter<A> {
+impl<A: Array> Iterator for InlineIter<A>
+where
+    A::Item: Default,
+{
     type Item = A::Item;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -52,7 +58,10 @@ impl<A: Array> Iterator for InlineIter<A> {
     }
 }
 
-impl<A: Array> IntoIterator for Vekk<A> {
+impl<A: Array> IntoIterator for Vekk<A>
+where
+    A::Item: Default,
+{
     type Item = A::Item;
     type IntoIter = Iter<A>;
 
